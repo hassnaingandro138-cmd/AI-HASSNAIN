@@ -60,12 +60,13 @@ export default function App() {
   const [healthStatus, setHealthStatus] = useState<HealthStatus>({
     ok: true,
     configured: true,
-    model: 'gemini-4-hydrogen',
+    model: 'gemini-3.1-flash-lite',
     status: 'connected',
   });
   const [isCheckingHealth, setIsCheckingHealth] = useState(false);
 
   const abortControllerRef = useRef<AbortController | null>(null);
+  const isSubmittingRef = useRef(false);
   const settingsRef = useRef(settings);
   settingsRef.current = settings;
 
@@ -202,13 +203,39 @@ export default function App() {
         });
 
         if (!response.ok) {
-          let errMsg = `Server error (${response.status}). Please try again.`;
+          let serverError: string | undefined;
           try {
-            const errJson = (await response.json()) as { error?: string };
-            if (errJson.error) errMsg = errJson.error;
+            const contentType = response.headers.get('content-type') || '';
+            if (contentType.includes('application/json')) {
+              const errJson = (await response.json()) as { error?: string };
+              if (errJson.error) serverError = errJson.error;
+            }
           } catch {
-            // fallback message
+            // Non-JSON error body
           }
+
+          let errMsg = serverError;
+          if (!errMsg) {
+            if (response.status === 404) {
+              errMsg =
+                'Chat API endpoint (/api/chat) was not found (404). Please verify the backend API route is deployed.';
+            } else if (response.status === 401 || response.status === 403) {
+              errMsg =
+                'API authentication failed (401/403). Please verify your server GEMINI_API_KEY configuration.';
+            } else if (response.status === 429) {
+              errMsg =
+                'Rate limit exceeded (429). Please wait a moment and try again.';
+            } else {
+              errMsg = `Server error (${response.status}). Please try again.`;
+            }
+          }
+
+          console.error('[HASSNAIN AI] Chat API HTTP error:', {
+            status: response.status,
+            endpoint: '/api/chat',
+            message: errMsg,
+          });
+
           updateAssistantMessage(errMsg, true);
           addToast(errMsg, 'error');
           return;
@@ -282,16 +309,18 @@ export default function App() {
           }
           addToast('Response generation stopped', 'info');
         } else {
+          console.error('[HASSNAIN AI] Chat network error:', err);
           const networkMsg =
-            'Network connection lost while waiting for Gemini AI. Please check your connection and retry.';
+            'Network failure: Unable to reach the server. Please check your internet connection and retry.';
           updateAssistantMessage(networkMsg, true);
           addToast(networkMsg, 'error');
         }
       } finally {
         if (abortControllerRef.current === controller) {
           abortControllerRef.current = null;
+          isSubmittingRef.current = false;
+          setIsGenerating(false);
         }
-        setIsGenerating(false);
       }
     },
     [addToast, stopGeneration]
@@ -300,7 +329,8 @@ export default function App() {
   const handleSendMessage = useCallback(
     (rawText: string) => {
       const text = rawText.trim();
-      if (!text || isGenerating) return;
+      if (!text || isGenerating || isSubmittingRef.current) return;
+      isSubmittingRef.current = true;
 
       const now = new Date().toISOString();
       const userMsg: ChatMessage = {
@@ -376,11 +406,12 @@ export default function App() {
 
   const handleRegenerate = useCallback(
     (assistantMessageId: string) => {
-      if (!activeChat || isGenerating) return;
+      if (!activeChat || isGenerating || isSubmittingRef.current) return;
       const targetIdx = activeChat.messages.findIndex(
         (m) => m.id === assistantMessageId
       );
       if (targetIdx === -1) return;
+      isSubmittingRef.current = true;
 
       const priorMessages = activeChat.messages
         .slice(0, targetIdx)
