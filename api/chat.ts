@@ -117,8 +117,18 @@ function buildSystemInstruction(
   const presetPrompt =
     PERSONALITY_PROMPTS[presetKey] ?? PERSONALITY_PROMPTS.balanced;
 
+  const now = new Date();
+  const currentDateStr = now.toLocaleDateString("en-US", {
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
+  const currentIsoDate = now.toISOString().split("T")[0];
+
   const baseInstruction = [
     "You are HASSNAIN AI, an intelligent, helpful, and natural AI assistant.",
+    `Current real-world date & time: Today is ${currentDateStr} (${currentIsoDate}). Always use this exact current date as the reference for any questions about today, tomorrow, yesterday, dates, or time.`,
     "Multilingual capability: Automatically detect the user's language in their latest message and respond fluently in the exact same language and script:",
     "- If the user writes in English, reply in English.",
     "- If the user writes in Urdu script (اردو), reply naturally in proper Urdu script (اردو).",
