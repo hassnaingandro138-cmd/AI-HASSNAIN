@@ -4,7 +4,8 @@ import type { Request, Response } from "express";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { handleChatRequest, handleHealthRequest } from "./lib/geminiApi.ts";
+import chatHandler from "./api/chat.ts";
+import healthHandler from "./api/health.ts";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -16,11 +17,11 @@ async function startServer() {
   app.use(express.json({ limit: "1mb" }));
 
   app.all("/api/health", (req: Request, res: Response) => {
-    handleHealthRequest(req, res);
+    healthHandler(req, res);
   });
 
   app.all("/api/chat", async (req: Request, res: Response) => {
-    await handleChatRequest(req, res);
+    await chatHandler(req, res);
   });
 
   app.use("/api", (_req: Request, res: Response) => {

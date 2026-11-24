@@ -96,10 +96,26 @@ export default function App() {
     saveSettings(settings);
   }, [settings]);
 
-  // Persist chats to LocalStorage
+  // Persist chats to LocalStorage (debounced during active streaming for instant UI)
+  const chatsRef = useRef(chats);
+  chatsRef.current = chats;
+
   useEffect(() => {
-    saveChats(chats);
-  }, [chats]);
+    if (!isGenerating) {
+      saveChats(chats);
+      return;
+    }
+    const timer = setTimeout(() => {
+      saveChats(chatsRef.current);
+    }, 600);
+    return () => clearTimeout(timer);
+  }, [chats, isGenerating]);
+
+  useEffect(() => {
+    const flushOnUnload = () => saveChats(chatsRef.current);
+    window.addEventListener('beforeunload', flushOnUnload);
+    return () => window.removeEventListener('beforeunload', flushOnUnload);
+  }, []);
 
   // Persist active chat pointer
   useEffect(() => {
@@ -109,15 +125,26 @@ export default function App() {
   const checkHealth = useCallback(async () => {
     setIsCheckingHealth(true);
     try {
-      const res = await fetch('/api/health');
-      if (!res.ok) throw new Error('Health check failed');
-      const data = (await res.json()) as HealthStatus;
-      setHealthStatus(data);
+      const res = await fetch('/api/health', { cache: 'no-store' });
+      const contentType = res.headers.get('content-type') || '';
+      if (!res.ok || !contentType.includes('application/json')) {
+        throw new Error('Health check failed');
+      }
+      const data = (await res.json()) as Partial<HealthStatus>;
+      if (typeof data.configured !== 'boolean' || !data.status) {
+        throw new Error('Invalid health payload');
+      }
+      setHealthStatus({
+        ok: Boolean(data.ok),
+        configured: data.configured,
+        model: data.model || 'gemini-3.1-flash-lite',
+        status: data.status,
+      });
     } catch {
       setHealthStatus({
         ok: false,
         configured: false,
-        model: 'gemini-4-hydrogen',
+        model: 'gemini-3.1-flash-lite',
         status: 'unreachable',
       });
     } finally {
@@ -143,6 +170,8 @@ export default function App() {
       abortControllerRef.current.abort();
       abortControllerRef.current = null;
     }
+    isSubmittingRef.current = false;
+    setIsGenerating(false);
   }, []);
 
   const streamAssistantResponse = useCallback(
@@ -151,9 +180,13 @@ export default function App() {
       apiHistory: Array<{ role: 'user' | 'assistant'; content: string }>,
       assistantMsgId: string
     ) => {
-      stopGeneration();
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+        abortControllerRef.current = null;
+      }
       const controller = new AbortController();
       abortControllerRef.current = controller;
+      isSubmittingRef.current = true;
       setIsGenerating(true);
 
       let accumulatedText = '';
@@ -230,7 +263,7 @@ export default function App() {
             }
           }
 
-          console.error('[HASSNAIN AI] Chat API HTTP error:', {
+          console.warn('[HASSNAIN AI] Chat API HTTP error:', {
             status: response.status,
             endpoint: '/api/chat',
             message: errMsg,
@@ -309,21 +342,24 @@ export default function App() {
           }
           addToast('Response generation stopped', 'info');
         } else {
-          console.error('[HASSNAIN AI] Chat network error:', err);
+          console.warn('[HASSNAIN AI] Chat network error:', err);
           const networkMsg =
             'Network failure: Unable to reach the server. Please check your internet connection and retry.';
           updateAssistantMessage(networkMsg, true);
           addToast(networkMsg, 'error');
         }
       } finally {
-        if (abortControllerRef.current === controller) {
+        if (
+          abortControllerRef.current === controller ||
+          abortControllerRef.current === null
+        ) {
           abortControllerRef.current = null;
           isSubmittingRef.current = false;
           setIsGenerating(false);
         }
       }
     },
-    [addToast, stopGeneration]
+    [addToast]
   );
 
   const handleSendMessage = useCallback(

@@ -48,9 +48,9 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
   onSelectPrompt,
 }) => {
   return (
-    <div className="flex-1 flex flex-col items-center justify-center px-3.5 sm:px-6 py-6 sm:py-10">
+    <div className="my-auto flex flex-col items-center justify-center px-3.5 sm:px-6 py-4 sm:py-6">
       <div className="w-full max-w-2xl mx-auto flex flex-col items-center text-center">
-        <HassnainLogo size="xl" className="mb-4 sm:mb-5 shadow-md" />
+        <HassnainLogo size="lg" className="mb-3.5 sm:mb-4 shadow-md" />
 
         <h1 className="font-display text-xl sm:text-3xl font-semibold tracking-tight text-slate-900 dark:text-white text-balance max-w-lg px-1">
           Hey! I&apos;m Hassnain AI. How can I help you today?
